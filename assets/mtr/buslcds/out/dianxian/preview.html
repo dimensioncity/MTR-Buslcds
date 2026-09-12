@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MTR Buslcds · 车外LED电显预览</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#1a1a1a;color:#ddd;font-family:"Microsoft YaHei",sans-serif;padding:16px}
+h1{font-size:16px;margin:0 0 12px;color:#fff}
+.wrap{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.panel{background:#222;border-radius:6px;padding:14px;min-width:290px}
+.panel h2{font-size:14px;margin:0 0 10px;color:#4fc3f7}
+.row{display:flex;align-items:center;margin-bottom:8px;gap:8px}
+.row label{width:100px;font-size:12px;color:#aaa;flex-shrink:0}
+.row select,.row input[type=text]{flex:1;background:#333;color:#fff;border:1px solid #444;border-radius:3px;padding:4px 6px;font-size:12px}
+.row input[type=checkbox]{accent-color:#4fc3f7}
+.panels{display:flex;flex-direction:column;gap:8px}
+.cvs-wrap{background:#000;padding:6px;border-radius:4px;flex-shrink:0}
+.cvs-wrap canvas{display:block;image-rendering:pixelated}
+.cvs-label{font-size:11px;color:#888;margin-top:4px}
+.divider{border:none;border-top:1px dashed #444;margin:10px 0}
+.tag{font-size:11px;color:#888;margin-top:8px}
+.hint{font-size:11px;color:#666;flex:1}
+.legend{font-size:11px;color:#888;margin-top:8px;line-height:1.8}
+.footer{margin-top:16px;padding:12px;background:#222;border-radius:6px;font-size:12px;color:#bbb;line-height:1.8}
+.footer a{color:#4fc3f7;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>MTR Buslcds · 车外LED电显预览 (out-dianxian) — 头显 / 中间 / 尾显 × 车辆状态</h1>
+<div class="wrap">
+<div class="panel">
+<h2>控制面板</h2>
+<div class="row"><label>Variant</label><select id="cfg-variant"><option value="bw">BW (橙黄)</option><option value="kl">KL (LED)</option></select></div>
+<div class="row kl-only"><label>KL 颜色</label><select id="cfg-color"><option value="orange">orange #FFCA3C</option><option value="red">red #FF3C28</option></select></div>
+<hr class="divider">
+<div class="row"><label>车辆状态</label><select id="cfg-state">
+  <option value="normal">normal 正常</option>
+  <option value="brake">brake 减速刹车</option>
+  <option value="left">left 左转</option>
+  <option value="right">right 右转</option>
+</select></div>
+<hr class="divider">
+<div class="row"><label>线路号</label><input type="text" id="cfg-route" value="18"></div>
+<div class="row"><label>终点站</label><select id="cfg-end"><option>人民广场</option><option>陆家嘴</option><option>南京东路</option><option>静安寺</option><option>徐家汇</option><option>上海火车站</option><option>上海南站</option></select></div>
+<div class="row"><label>起点站</label><select id="cfg-start"><option>上海南站</option><option>上海火车站</option><option>徐家汇</option><option>静安寺</option><option>南京东路</option><option>陆家嘴</option><option>人民广场</option></select></div>
+<hr class="divider">
+<div class="row"><label>start</label><input type="checkbox" id="cfg-start-mode"><span class="hint">显示 起点→终点</span></div>
+<div class="row"><label>english</label><input type="checkbox" id="cfg-english"><span class="hint">CN/EN 轮播 (仅中间)</span></div>
+<div class="row"><label>bashi</label><input type="checkbox" id="cfg-bashi"><span class="hint">巴士数字字体</span></div>
+<div class="tag" id="status-tag"></div>
+<div class="legend">
+  <b>尾显时序：</b><br>
+  刹车 → 1s 闪烁 "注意 [雪花]线路名 刹车"<br>
+  左转 → 2s 雪花+线路名 ↔ 2s ←变道<br>
+  右转 → 2s 雪花+线路名 ↔ 2s 变道→
+</div>
+</div>
+<div class="panels" id="panels">
+<div class="cvs-wrap"><canvas id="p0" width="1600" height="200"></canvas><div class="cvs-label">slot[0] — 头显 front — 永远正常</div></div>
+<div class="cvs-wrap"><canvas id="p1" width="1600" height="200"></canvas><div class="cvs-label">slot[1] — 中间 middle — 雪花 + 起点→终点</div></div>
+<div class="cvs-wrap"><canvas id="p2" width="1600" height="200"></canvas><div class="cvs-label">slot[2] — 尾显 tail — 响应刹车/转向</div></div>
+</div>
+</div>
+<div class="footer">
+  预览镜像自 <code>out/dianxian/{bw,kl}/main.js</code>。每个 variant 有 3 块 1600×200 LED 面板，<br>
+  role 分别为 front / "" / tail。头显永远正常显示，尾显响应刹车/转向。<br>
+  车内电显预览 → <a href="../in/dianxian/preview.html">in/dianxian/preview.html</a>
+</div>
+
+<script>
+/* MTR Buslcds · out-dianxian 预览 — 完整镜像 main.js 逻辑 */
+const cvs=[document.getElementById("p0"),document.getElementById("p1"),document.getElementById("p2")];
+const ctxs=cvs.map(c=>c.getContext("2d"));
+const PW=1600, PH=200;
+const BW_FONT='"Consolas","Courier New","Lucida Console",monospace';
+const KL_FONT='"Impact","Arial Black","Microsoft YaHei",sans-serif';
+const KL_LED={orange:"#FFCA3C",red:"#FF3C28"};
+const SNOW_SIZE=70, SNOW_GAP=20;
+const SE={"人民广场":"People's Square","陆家嘴":"Lujiazui","南京东路":"East Nanjing Rd",
+          "静安寺":"Jing'an Temple","徐家汇":"Xujiahui","上海火车站":"Shanghai Railway Station",
+          "上海南站":"Shanghai South Railway Station"};
+const ARROW="\u2192", LARROW="\u2190";
+
+function cfg(){return{
+  v:document.getElementById("cfg-variant").value,
+  col:document.getElementById("cfg-color").value,
+  state:document.getElementById("cfg-state").value,
+  route:document.getElementById("cfg-route").value,
+  endCN:document.getElementById("cfg-end").value,
+  startCN:document.getElementById("cfg-start").value,
+  start:document.getElementById("cfg-start-mode").checked,
+  eng:document.getElementById("cfg-english").checked,
+  bashi:document.getElementById("cfg-bashi").checked
+}}
+function enName(c){return SE[c]||c}
+
+let _BRAKE_FRAME=0,_TURN_FRAME=0,_OUT_FRAME=0,_OUT_KL_FRAME=0;
+function vehicleState(c){
+  if(c.state==="brake"){_BRAKE_FRAME++}else{_BRAKE_FRAME=0}
+  if(c.state==="left"||c.state==="right"){_TURN_FRAME++;if(_TURN_FRAME>240)_TURN_FRAME=240}else{_TURN_FRAME=0}
+  return{state:c.state,brakeBlink:(_BRAKE_FRAME%60)<30,turnPhase:Math.floor(_TURN_FRAME/120)%2}
+}
+
+function drawSnowflake(ctx,cx,cy,size,color){
+  ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;
+  ctx.lineWidth=Math.max(3,size*0.04);ctx.lineCap="round";ctx.lineJoin="round";
+  const armLen=size/2;
+  for(let i=0;i<6;i++){
+    const ang=Math.PI/3*i-Math.PI/2;
+    const ex=cx+armLen*Math.cos(ang), ey=cy+armLen*Math.sin(ang);
+    ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(ex,ey);ctx.stroke();
+    for(let b=1;b<=2;b++){
+      const t=b/3, bx=cx+armLen*t*Math.cos(ang), by=cy+armLen*t*Math.sin(ang);
+      for(let s=-1;s<=1;s+=2){
+        const bAng=ang+s*Math.PI/3, bLen=armLen*0.28;
+        ctx.lineWidth=Math.max(2,size*0.025);
+        ctx.beginPath();ctx.moveTo(bx,by);ctx.lineTo(bx+bLen*Math.cos(bAng),by+bLen*Math.sin(bAng));ctx.stroke();
+      }
+      ctx.lineWidth=Math.max(3,size*0.04);
+    }
+  }
+  ctx.beginPath();ctx.arc(cx,cy,Math.max(2,size*0.04),0,Math.PI*2);ctx.fill();
+  ctx.restore();
+}
+
+function buildFrontTail(c,veh,role){
+  const isFront=(role==="front");
+  let snowPos="prefix",prefixText="",mainText="",suffixText="";
+  if(isFront||veh.state==="normal"){
+    mainText=isFront?(c.route+"  "+ARROW+"  "+c.endCN):(c.route+"  "+LARROW+"  "+(c.startCN||c.endCN));
+    snowPos="prefix";
+  }else if(veh.state==="brake"){
+    if(veh.brakeBlink){prefixText="注意  ";mainText=c.route;suffixText="  刹车";snowPos="middle"}
+    else{mainText=c.route+"  "+ARROW+"  "+c.endCN;snowPos="prefix"}
+  }else if(veh.state==="left"){
+    if(veh.turnPhase===0){mainText=c.route+"  "+ARROW+"  "+c.endCN;snowPos="prefix"}
+    else{mainText=LARROW+" 变 道";snowPos="none"}
+  }else if(veh.state==="right"){
+    if(veh.turnPhase===0){mainText=c.route+"  "+ARROW+"  "+c.endCN;snowPos="prefix"}
+    else{mainText="变 道  "+ARROW;snowPos="none"}
+  }
+  return{snowPos,prefixText,mainText,suffixText};
+}
+
+function buildMiddleText(c,frame){
+  if(!c.route)return"机 动 车";
+  let text;
+  const showEN=c.eng&&Math.floor(frame/60)%2===1;
+  if(showEN){text=c.start?(enName(c.startCN)+" "+ARROW+" "+enName(c.endCN)):enName(c.endCN)}
+  else{text=c.start?(c.route+"  "+c.startCN+" "+ARROW+" "+c.endCN):(c.route+"  "+ARROW+" "+c.endCN)}
+  return text;
+}
+
+const scrolls={};
+function mkScroll(t,mw,spd,pS,pE){return{t,mw,spd,pS,pE,x:mw,st:"pauseStart",f:0}}
+function updScroll(ss){
+  const tw=ctxs[0].measureText(ss.t).width;
+  if(ss.st==="pauseStart"){ss.f++;if(ss.f>=ss.pS){ss.st="scroll";ss.f=0;ss.x=ss.mw}}
+  else if(ss.st==="scroll"){ss.x-=ss.spd;if(ss.x+tw<=0){ss.st="pauseEnd";ss.f=0}}
+  else{ss.f++;if(ss.f>=ss.pE){ss.st="pauseStart";ss.f=0;ss.x=ss.mw;return true}}
+  return false;
+}
+
+function drawFrontTail(ctx,c,veh,role){
+  ctx.fillStyle="#000";ctx.fillRect(0,0,PW,PH);
+  const font=c.v==="bw"?BW_FONT:KL_FONT, fs=80;
+  const LED=c.v==="bw"?"#FFCA3C":(KL_LED[c.col]||KL_LED.orange);
+  const cy=PH/2, baselineY=cy+30;
+  const info=buildFrontTail(c,veh,role);
+  ctx.font=fs+"px "+font;ctx.fillStyle=LED;ctx.strokeStyle=LED;
+
+  const wPre=info.snowPos==="middle"?ctx.measureText(info.prefixText).width:0;
+  const wMain=ctx.measureText(info.mainText).width;
+  const wSuf=info.snowPos==="middle"?ctx.measureText(info.suffixText).width:0;
+  const snowWithGap=SNOW_SIZE+SNOW_GAP;
+  let totalW;
+  if(info.snowPos==="prefix")totalW=snowWithGap+wMain;
+  else if(info.snowPos==="middle")totalW=wPre+snowWithGap+wMain+wSuf;
+  else totalW=wMain;
+
+  if(totalW<=PW-40){
+    let cx=(PW-totalW)/2;
+    if(info.snowPos==="prefix"){
+      drawSnowflake(ctx,cx+SNOW_SIZE/2,cy,SNOW_SIZE,LED);
+      ctx.fillText(info.mainText,cx+snowWithGap,baselineY);
+    }else if(info.snowPos==="middle"){
+      ctx.fillText(info.prefixText,cx,baselineY);cx+=wPre;
+      drawSnowflake(ctx,cx+SNOW_SIZE/2,cy,SNOW_SIZE,LED);cx+=snowWithGap;
+      ctx.fillText(info.mainText+info.suffixText,cx,baselineY);
+    }else{ctx.fillText(info.mainText,cx,baselineY)}
+  }else{
+    const sk="ft-"+role+"-"+info.snowPos;
+    let scrollX,scrollMaxW,scrollText;
+    if(info.snowPos==="prefix"){
+      drawSnowflake(ctx,40+SNOW_SIZE/2,cy,SNOW_SIZE,LED);
+      scrollX=40+snowWithGap;scrollMaxW=PW-40-snowWithGap;scrollText=info.mainText;
+    }else if(info.snowPos==="middle"){
+      ctx.fillText(info.prefixText,40,baselineY);
+      drawSnowflake(ctx,40+wPre+SNOW_SIZE/2,cy,SNOW_SIZE,LED);
+      scrollX=40+wPre+snowWithGap;scrollMaxW=PW-40-wPre-snowWithGap;scrollText=info.mainText+info.suffixText;
+    }else{scrollX=40;scrollMaxW=PW-80;scrollText=info.mainText}
+    const spd=c.v==="bw"?0.6:2.0;
+    if(!scrolls[sk]||scrolls[sk].t!==scrollText)scrolls[sk]=mkScroll(scrollText,scrollMaxW,spd,300,300);
+    updScroll(scrolls[sk]);
+    ctx.fillText(scrolls[sk].t,Math.max(scrolls[sk].x,scrollX),baselineY);
+  }
+}
+
+function drawMiddle(ctx,c){
+  ctx.fillStyle="#000";ctx.fillRect(0,0,PW,PH);
+  const font=c.v==="bw"?BW_FONT:KL_FONT, fs=c.v==="bw"?64:72;
+  const LED=c.v==="bw"?"#FFCA3C":(KL_LED[c.col]||KL_LED.orange);
+  const frame=c.v==="bw"?(++_OUT_FRAME):(++_OUT_KL_FRAME);
+  const text=buildMiddleText(c,frame);
+  ctx.font=fs+"px "+font;ctx.fillStyle=LED;
+  const tw=ctx.measureText(text).width;
+  const cy=PH/2, baselineY=cy+fs*0.35;
+  const snowWithGap=SNOW_SIZE+SNOW_GAP;
+  if(tw+snowWithGap<=PW-40){
+    const totalW=snowWithGap+tw, leftX=(PW-totalW)/2;
+    drawSnowflake(ctx,leftX+SNOW_SIZE/2,cy,SNOW_SIZE,LED);
+    ctx.fillText(text,leftX+snowWithGap,baselineY);
+  }else{
+    drawSnowflake(ctx,40+SNOW_SIZE/2,cy,SNOW_SIZE,LED);
+    const spd=c.v==="bw"?0.6:2.0, sk="mid-"+c.v;
+    if(!scrolls[sk]||scrolls[sk].t!==text)scrolls[sk]=mkScroll(text,PW-40-snowWithGap,spd,300,300);
+    updScroll(scrolls[sk]);
+    ctx.fillText(scrolls[sk].t,Math.round(scrolls[sk].x),baselineY);
+  }
+}
+
+function draw(){
+  const c=cfg(), veh=vehicleState(c);
+  drawFrontTail(ctxs[0],c,veh,"front");
+  drawMiddle(ctxs[1],c);
+  drawFrontTail(ctxs[2],c,veh,"tail");
+  const stLabel=veh.state==="normal"?"正常":
+    veh.state==="brake"?("刹车 "+(veh.brakeBlink?"闪烁":"稳态")):
+    veh.state==="left"?("左转 phase="+veh.turnPhase):
+    ("右转 phase="+veh.turnPhase);
+  document.getElementById("status-tag").textContent=
+    c.v.toUpperCase()+" · route="+c.route+" · state="+stLabel+
+    (c.start?" · start":"")+(c.eng?" · EN":"")+(c.bashi?" · bashi":"");
+  requestAnimationFrame(draw);
+}
+
+function vis(){document.querySelectorAll(".kl-only").forEach(e=>e.style.display=cfg().v==="kl"?"flex":"none")}
+document.querySelectorAll("select,input[type=checkbox],input[type=text]")
+  .forEach(e=>e.addEventListener("change",()=>{vis();for(const k in scrolls)delete scrolls[k];_OUT_FRAME=0;_OUT_KL_FRAME=0;_BRAKE_FRAME=0;_TURN_FRAME=0}));
+vis();requestAnimationFrame(draw);
+</script>
+</body>
+</html>

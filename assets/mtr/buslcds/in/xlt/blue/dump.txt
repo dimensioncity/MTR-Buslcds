@@ -1,0 +1,399 @@
+// 公交车内线路图绘制 v6.0
+// 重写算法 —— 基于真实 MTR 存档结构:
+//
+// 核心原理:
+//   route 文件 = 完整 platform_ids 数组 (每个方向 13 个)
+//   getAllPlatforms = 所有 platform (含 up 和 dn 两个方向)
+//   双向站 = station 在 up 和 dn 两个 route 里都有 platform
+//   单向站 = station 只在一个方向的 route 里有 platform
+//
+// 排列规则 (用户要求):
+//   1. 方向判断: route.name 的 #direction:up / #direction:dn (不变)
+//   2. 单向站在两个双向站之间, 上行单向站在下行单向站的左侧
+//   3. 起终点站 = routePlats 的首尾 platform 的 station, 强制双向
+//   4. 起终点站均为双向站
+//
+// 实现步骤:
+//   Step 1: 从 routePlats 获取当前方向 platform 序列 (真实行驶顺序)
+//   Step 2: 从 getAllPlatforms 建立 station 的双向/单向属性
+//   Step 3: 遍历 routePlats, 标记每个 station 是双向/上行单向/下行单向
+//   Step 4: 按规则重新排列 —— 双向主线居中, 单向站按类型插到正确位置
+//   Step 5: 首尾强制双向
+//
+importPackage(java.awt);
+importPackage(java.awt.geom);
+
+var MAP_LEFT_W = 340;
+var MAP_RIGHT_X = MAP_LEFT_W;
+var MAP_RIGHT_W = 2000 - MAP_LEFT_W;
+var MAP_DOT_R = 10;
+
+function DrawVerticalText(g, text, topX, topY, maxChars) {
+    g.drawString(text.charAt(0), topX, topY);
+    for (var i = 1; i < text.length; i++) {
+        g.drawString(text.charAt(i), topX, topY + i * g.getFontMetrics().getHeight());
+    }
+}
+
+var DIAG = false;
+var _LOG_CTX = null;
+function LOG(msg) {
+    try { print("[BSL] " + msg); } catch (e) {}
+}
+
+// ============ 辅助函数 ============
+function _safeGet(obj, key) {
+    try { if (obj != null) return obj[key]; } catch(e) {}
+    return null;
+}
+function _safeCall(obj, method) {
+    try { if (obj != null && typeof obj[method] == "function") return obj[method](); } catch(e) {}
+    return null;
+}
+function _tryStr(v) {
+    try { if (v == null) return "null"; return String(v); } catch(e) { return "err"; }
+}
+
+function extractCjk(name) {
+    if (name == null) return "";
+    var chars = [];
+    var s = String(name).trim();
+    for (var i = 0; i < s.length; i++) {
+        var c = s.charCodeAt(i);
+        if (c >= 0x4E00 && c <= 0x9FFF) chars.push(s.charAt(i));
+    }
+    if (chars.length == 0) return s;
+    return chars.join("");
+}
+var normKey = extractCjk;
+
+function listSize(list) {
+    try {
+        if (list == null) return 0;
+        if (typeof list.size == "function") return list.size();
+        if (list.length != null) return list.length;
+        return 0;
+    } catch(e) { return 0; }
+}
+
+/**
+ * 从 MTR Platform 对象提取站名 (拆 '|' 取中文部分)
+ */
+function platName(p) {
+    if (p == null) return "";
+    var raw = "";
+    try {
+        var st = p.station;
+        if (st != null && st.name != null) raw = String(st.name);
+        if (raw.length == 0 && p.destinationName != null) raw = String(p.destinationName);
+        if (raw.length == 0 && p.name != null) raw = String(p.name);
+    } catch (e) {}
+    if (raw.length == 0) return "";
+    var pipeIdx = raw.indexOf('|');
+    if (pipeIdx > 0) raw = raw.substring(0, pipeIdx);
+    return raw.trim();
+}
+
+/**
+ * 获取 platform 的 station 对象唯一标识
+ * 用 String(p.station) —— MTR 的 Station@hashCode 格式
+ */
+function platStationId(p) {
+    if (p == null) return "null";
+    try {
+        var st = p.station;
+        if (st != null) return String(st);
+    } catch(e) {}
+    return "no_station";
+}
+
+/**
+ * 获取 platform 所属 route 的方向
+ * 从 route.name 提取 #direction:up / #direction:dn
+ */
+function platDirection(p) {
+    try {
+        var rn = p.route ? String(p.route.name) : "";
+        var m = rn.match(/#direction:(up|dn|down)/);
+        if (m) return (m[1] == "down") ? "dn" : m[1];
+        // fallback: n:up / n:dn
+        var m2 = rn.match(/(?:^|\|\|)n[:=](up|dn|down)/);
+        if (m2) return (m2[1] == "down") ? "dn" : m2[1];
+    } catch(e) {}
+    return "?";
+}
+
+// ============ 方向解析 (不变) ============
+function resolveDirection(rawRouteName, routePlats, allPlats, train) {
+    if (rawRouteName != null && rawRouteName.length > 0) {
+        var rn = String(rawRouteName).toLowerCase();
+        var dirMatch = rn.match(/(?:n|direction)[:=](up|dn|down)/);
+        if (dirMatch) {
+            var d = dirMatch[1];
+            if (d == "dn" || d == "down") { LOG("direction from route.name: dn"); return "dn"; }
+            LOG("direction from route.name: up"); return "up";
+        }
+    }
+    try {
+        var ap = (allPlats != null && listSize(allPlats) > 0) ? allPlats : train.getAllPlatforms();
+        if (ap != null && listSize(ap) > 0 && routePlats != null && listSize(routePlats) > 0) {
+            var apFirstName = platName(ap.get(0));
+            var rpFirstName = platName(routePlats.get(0));
+            if (extractCjk(apFirstName) != extractCjk(rpFirstName)) return "dn";
+            return "up";
+        }
+    } catch (e) {}
+    return "up";
+}
+
+// ============ 核心: buildStationList (V7 — 双向站锚点对齐) ============
+/**
+ * V8-fix: 双向站锚点对齐 + 全区间覆盖 (头部/中间/尾部)
+ *
+ * Bug 修复: 单向站可能在双向站序列的尾部/头部, 不只是中间
+ * 算法:
+ *   1. 构建全区间 groups[] = [HEAD, pair_0, pair_1, ..., pair_n, TAIL]
+ *   2. curPlats 单向站 → 按 curPlats 的 pos 分配到对应区间
+ *   3. otherPlats 单向站 → 按 otherPlats 里左右双向站分配到对应区间
+ *   4. 每个区间内 up/dn 分别均匀分布, 按 fraction 排序 → 自然交错
+ *   5. dn 加 epsilon 保证同 fraction 时 up 在左
+ */
+function buildStationList(train, routePlats, direction, allPlats) {
+    var _routeName = "?";
+    try {
+        if (train != null && train.route != null) _routeName = String(train.route.name);
+        else if (routePlats != null && listSize(routePlats) > 0) {
+            var _p0 = routePlats.get ? routePlats.get(0) : routePlats[0];
+            if (_p0 != null && _p0.route != null) _routeName = String(_p0.route.name);
+        }
+    } catch(e) {}
+    LOG("V8-fix BSL dir=" + direction + " route=[" + _routeName.substring(0, 60) + "]");
+
+    if (routePlats == null || listSize(routePlats) == 0) { LOG("  routePlats empty -> []"); return []; }
+    var rsz = listSize(routePlats);
+
+    var curDir = direction;
+    var otherDir = (direction == "up") ? "dn" : "up";
+
+    // --- 数据准备 ---
+    var ap = null;
+    try { ap = (allPlats != null && listSize(allPlats) > 0) ? allPlats : train.getAllPlatforms(); } catch (e) {}
+
+    var _routePrefix = "";
+    try {
+        var _r0 = routePlats.get ? routePlats.get(0) : routePlats[0];
+        if (_r0 != null && _r0.route != null) {
+            var _m = String(_r0.route.name).match(/^(.*?路)/);
+            if (_m) _routePrefix = _m[1];
+        }
+    } catch(e) {}
+
+    // curPlats: routePlats 去重
+    var curPlats = [];
+    var curSeen = {};
+    for (var i = 0; i < rsz; i++) {
+        var rp = routePlats.get ? routePlats.get(i) : routePlats[i];
+        if (rp == null) continue;
+        var stId = platStationId(rp);
+        if (curSeen[stId]) continue;
+        curSeen[stId] = true;
+        curPlats.push({ stId: stId, name: platName(rp), pos: i });
+    }
+    LOG("  curPlats size=" + curPlats.length);
+
+    // otherPlats + stationStats
+    var otherPlats = [];
+    var otherSeen = {};
+    var stationStats = {};
+    if (ap != null && listSize(ap) > 0) {
+        for (var i = 0; i < listSize(ap); i++) {
+            var p = ap.get ? ap.get(i) : ap[i];
+            if (p == null) continue;
+            var pStId = platStationId(p);
+            var pName = platName(p);
+            var pDir = platDirection(p);
+
+            if (!stationStats[pStId]) stationStats[pStId] = { up: 0, dn: 0, upName: "", dnName: "" };
+            if (pDir == "up") { stationStats[pStId].up++; if (stationStats[pStId].upName == "") stationStats[pStId].upName = pName; }
+            else if (pDir == "dn") { stationStats[pStId].dn++; if (stationStats[pStId].dnName == "") stationStats[pStId].dnName = pName; }
+
+            var pRn = "";
+            try { pRn = p.route ? String(p.route.name) : ""; } catch(e2) {}
+            if (_routePrefix.length > 0 && pRn.indexOf(_routePrefix) != 0) continue;
+
+            if (pDir == otherDir && !otherSeen[pStId]) {
+                otherSeen[pStId] = true;
+                otherPlats.push({ stId: pStId, name: pName, pos: otherPlats.length });
+            }
+        }
+    }
+    LOG("  stationStats=" + Object.keys(stationStats).length + " otherPlats=" + otherPlats.length);
+
+    // --- Step 1: 标记双向/单向 ---
+    for (var i = 0; i < curPlats.length; i++) {
+        var s = stationStats[curPlats[i].stId];
+        curPlats[i].isBoth = (s != null && s.up > 0 && s.dn > 0);
+    }
+    for (var i = 0; i < otherPlats.length; i++) {
+        var s = stationStats[otherPlats[i].stId];
+        otherPlats[i].isBoth = (s != null && s.up > 0 && s.dn > 0);
+    }
+
+    // --- Step 2: curPlats 双向站位置 + 锚点 ---
+    var cur_st_pos = {};
+    var cur_both_order = [];
+    var cur_both_pos = [];
+    var anchors = {};
+    for (var i = 0; i < curPlats.length; i++) {
+        cur_st_pos[curPlats[i].stId] = i;
+        if (curPlats[i].isBoth) {
+            anchors[curPlats[i].stId] = i * 10.0;
+            cur_both_order.push(curPlats[i].stId);
+            cur_both_pos.push(i);
+        }
+    }
+    LOG("  双向站: " + cur_both_order.length + " 个 pos=" + JSON.stringify(cur_both_pos));
+    for (var i = 0; i < cur_both_order.length; i++) {
+        LOG("    [" + i + "] " + cur_both_order[i] + " key=" + anchors[cur_both_order[i]]);
+    }
+
+    var first_both_pos = cur_both_pos[0];
+    var last_both_pos = cur_both_pos[cur_both_pos.length - 1];
+
+    // --- Step 3: 构建全区间 groups[] ---
+    // group: { leftKey, rightKey, leftStId, rightStId, ups: [], dns: [] }
+    var G_HEAD = "__HEAD__";
+    var G_TAIL = "__TAIL__";
+    var groups = [];
+
+    // 头部 (pos < first_both_pos)
+    groups.push({
+        leftKey: anchors[cur_both_order[0]] - 10,
+        rightKey: anchors[cur_both_order[0]],
+        leftStId: G_HEAD,
+        rightStId: cur_both_order[0],
+        ups: [], dns: []
+    });
+
+    // 中间双向站对
+    for (var i = 0; i < cur_both_order.length - 1; i++) {
+        groups.push({
+            leftKey: anchors[cur_both_order[i]],
+            rightKey: anchors[cur_both_order[i + 1]],
+            leftStId: cur_both_order[i],
+            rightStId: cur_both_order[i + 1],
+            ups: [], dns: []
+        });
+    }
+
+    // 尾部 (pos > last_both_pos)
+    groups.push({
+        leftKey: anchors[cur_both_order[cur_both_order.length - 1]],
+        rightKey: anchors[cur_both_order[cur_both_order.length - 1]] + 10,
+        leftStId: cur_both_order[cur_both_order.length - 1],
+        rightStId: G_TAIL,
+        ups: [], dns: []
+    });
+
+    // --- Step 4: 分配 curPlats 单向站到区间 ---
+    for (var i = 0; i < curPlats.length; i++) {
+        var cp = curPlats[i];
+        if (cp.isBoth) continue;
+        var cps = stationStats[cp.stId];
+        var direction = (cps && cps.up > 0) ? "up" : "dn";
+
+        var pos = cp.pos;
+        var assigned = false;
+
+        for (var gi = 0; gi < groups.length; gi++) {
+            var g = groups[gi];
+            if (g.leftStId == G_HEAD) {
+                if (pos < first_both_pos) {
+                    if (direction == "up") g.ups.push(cp); else g.dns.push(cp);
+                    assigned = true; break;
+                }
+            } else if (g.rightStId == G_TAIL) {
+                if (pos > last_both_pos) {
+                    if (direction == "up") g.ups.push(cp); else g.dns.push(cp);
+                    assigned = true; break;
+                }
+            } else {
+                var lap = cur_st_pos[g.leftStId];
+                var rap = cur_st_pos[g.rightStId];
+                if (lap != null && rap != null && lap < pos && pos < rap) {
+                    if (direction == "up") g.ups.push(cp); else g.dns.push(cp);
+                    assigned = true; break;
+                }
+            }
+        }
+        if (!assigned) LOG("  ⚠️ curPlats 单向未分配: " + cp.stId + " pos=" + pos);
+    }
+
+    // --- Step 5: 分配 otherPlats 单向站到区间 ---
+    for (var i = 0; i < otherPlats.length; i++) {
+        var op = otherPlats[i];
+        if (op.isBoth) continue;
+        if (curSeen[op.stId]) continue;
+        var ops = stationStats[op.stId];
+        var direction = (ops && ops.up > 0) ? "up" : "dn";
+
+        // 在 otherPlats 找左右最近双向站
+        var leftOtherSt = null;
+        var rightOtherSt = null;
+        for (var k = i - 1; k >= 0; k--) {
+            if (otherPlats[k].isBoth) { leftOtherSt = otherPlats[k].stId; break; }
+        }
+        for (var k = i + 1; k < otherPlats.length; k++) {
+            if (otherPlats[k].isBoth) { rightOtherSt = otherPlats[k].stId; break; }
+        }
+
+        var assigned = false;
+        for (var gi = 0; gi < groups.length; gi++) {
+            var g = groups[gi];
+            var matchLeft = (g.leftStId == leftOtherSt) || (g.leftStId == G_HEAD && leftOtherSt == null);
+            var matchRight = (g.rightStId == rightOtherSt) || (g.rightStId == G_TAIL && rightOtherSt == null);
+            if (matchLeft && matchRight) {
+                if (direction == "up") g.ups.push(op); else g.dns.push(op);
+                assigned = true; break;
+            }
+        }
+        if (!assigned) LOG("  ⚠️ otherPlats 单向未分配: " + op.stId + " left=" + leftOtherSt + " right=" + rightOtherSt);
+    }
+
+    // --- Step 6: interleave 每个区间 + 生成单向站 entries ---
+    var stations = [];
+    var epsilon = 0.001;
+
+    for (var gi = 0; gi < groups.length; gi++) {
+        var g = groups[gi];
+        var total = g.ups.length + g.dns.length;
+        if (total == 0) continue;
+
+            var span = g.rightKey - g.leftKey;
+    var upCount = g.ups.length;
+    var dnCount = g.dns.length;
+    var total = upCount + dnCount;
+    var combined = [];
+
+    if (upCount > 0 && dnCount > 0) {
+        var midKey = g.leftKey + span * (upCount / total);
+        for (var k = 0; k < upCount; k++) {
+            var frac = (k + 1) / (upCount + 1);
+            combined.push({ key: g.leftKey + (midKey - g.leftKey) * frac, type: "up", plat: g.ups[k] });
+        }
+        for (var k = 0; k < dnCount; k++) {
+            var frac = (k + 1) / (dnCount + 1);
+            combined.push({ key: midKey + (g.rightKey - midKey) * frac, type: "dn", plat: g.dns[k] });
+        }
+    } else if (upCount > 0) {
+        for (var k = 0; k < upCount; k++) {
+            var frac = (k + 1) / (upCount + 1);
+            combined.push({ key: g.leftKey + span * frac, type: "up", plat: g.ups[k] });
+        }
+    } else if (dnCount > 0) {
+        for (var k = 0; k < dnCount; k++) {
+            var frac = (k + 1) / (dnCount + 1);
+            combined.push({ key: g.leftKey + span * frac, type: "dn", plat: g.dns[k] });
+        }
+    }
+

@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>莘南专线 · 车内线路图预览</title>
+<style>
+  @font-face {
+    font-family: "XltCn";
+    src: url("xltcn.ttf") format("truetype");
+    font-weight: normal;
+    font-style: normal;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #222;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px;
+    font-family: "XltCn", "SimSun", serif;
+  }
+  h2 { color: #aaa; margin-bottom: 16px; font-weight: normal; font-family: "XltCn", serif; }
+  /* 画板容器：2000x400 按 0.5 比例缩放展示 */
+  .canvas-wrap {
+    width: 1000px;
+    height: 200px;
+    border: 4px solid #111;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+    position: relative;
+    overflow: hidden;
+  }
+  .canvas-inner {
+    width: 2000px;
+    height: 400px;
+    transform-origin: top left;
+    transform: scale(0.5);
+    position: relative;
+  }
+
+  /* ========== 左侧蓝色面板 ========== */
+  .left-panel {
+    position: absolute;
+    left: 0; top: 0;
+    width: 340px; height: 400px;
+    background: #1E5BA8;
+    padding: 20px;
+    color: #fff;
+    font-family: "XltCn", serif;
+  }
+  .operator {
+    font-size: 44px;
+    font-weight: bold;
+    text-align: center;
+    margin-top: 10px;
+  }
+  .divider {
+    height: 2px;
+    background: #fff;
+    margin: 18px 0;
+  }
+  .section-title {
+    font-size: 22px;
+  }
+  .terminal-name {
+    font-size: 26px;
+    text-align: center;
+    margin-top: 6px;
+  }
+  .terminal-time {
+    font-size: 24px;
+    text-align: center;
+    font-family: "XltCn", serif;
+  }
+  .fare {
+    font-size: 20px;
+    margin-top: 0px;
+  }
+  .arrow-wrap {
+    position: absolute;
+    bottom: 30px;
+    left: 0; right: 0;
+    text-align: center;
+  }
+  .arrow-wrap svg { width: 80px; height: 20px; }
+
+  /* ========== 右侧白色区域 ========== */
+  .right-area {
+    position: absolute;
+    left: 340px; top: 0;
+    width: 1660px; height: 400px;
+    background: #F5F5F5;
+  }
+  .line-name {
+    font-size: 72px;
+    font-weight: bold;
+    color: #1E5BA8;
+    text-align: center;
+    padding-top: 0;
+    font-family: "XltCn", serif;
+  }
+
+  /* 线路图区域 — 紧贴左面板，无左侧留白 */
+  .map-area {
+    position: absolute;
+    left: 340px; top: 72px;
+    width: 1660px; height: 325px;
+  }
+
+  /* 底部方向箭头（在右区最右侧） */
+  .bottom-arrow {
+    position: absolute;
+    bottom: 8px;
+    left: 340px; top: 360px;
+    width: 1660px; height: 20px;
+    text-align: right;
+    padding-right: 16px;
+  }
+  .bottom-arrow svg { width: 40px; height: 20px; }
+
+  /* 控制栏 */
+  .controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    color: #aaa;
+    font-size: 14px;
+    align-items: center;
+  }
+  .controls select {
+    padding: 4px 8px;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+
+<h2>🚌 莘南专线 · 车内线路图预览</h2>
+
+<div class="canvas-wrap">
+  <div class="canvas-inner" id="canvas">
+    <!-- 由 JS 动态生成 -->
+  </div>
+</div>
+
+<div class="controls">
+  方向:
+  <select id="dirSelect">
+    <option value="up" selected>上行（莘庄地铁站 → 南桥汽车站）</option>
+    <option value="dn">下行（南桥汽车站 → 莘庄地铁站）</option>
+  </select>
+  票价:
+  <select id="fareSelect">
+    <option value="" selected>默认（多级售票）</option>
+    <option value="1">单一票价壹元</option>
+    <option value="2">单一票价贰元</option>
+    <option value="3">单一票价叁元</option>
+    <option value="1-5">多级售票（1-5元）</option>
+    <option value="1~5">多级售票（1~5元）</option>
+  </select>
+</div>
+
+<script>
+/* ========= 站点数据 ========= */
+const ALL_STATIONS = [
+  { name: "莘庄地铁站", type: "both" },
+  { name: "都市路名都路", type: "both" },
+  { name: "都市路春申路", type: "both" },
+  { name: "都市路银都路", type: "both" },
+  { name: "都市路金都路", type: "both" },
+  { name: "都市路颛兴路", type: "both" },
+  { name: "北桥", type: "both" },
+  { name: "剑川路沪闵路", type: "dn" },
+  { name: "交大东校区", type: "up" },
+  { name: "新南家园", type: "up" },
+  { name: "南桥路", type: "dn" },
+  { name: "西渡卫生院", type: "dn" },
+  { name: "金都雅苑", type: "both" },
+  { name: "大同村", type: "both" },
+  { name: "亿松路", type: "both" },
+  { name: "环城东路大叶公路", type: "both" },
+  { name: "环城东路环城北路", type: "both" },
+  { name: "环城东路公谊路", type: "both" },
+  { name: "泰浦新村", type: "both" },
+  { name: "环城东路国顺路", type: "both" },
+  { name: "环城东路航南公路", type: "both" },
+  { name: "易买得超市", type: "dn" },
+  { name: "曙光路", type: "up" },
+  { name: "解放路环城东路", type: "up" },
+  { name: "奉贤电视台", type: "dn" },
+  { name: "南桥汽车站", type: "both" }
+];
+
+const OPERATOR = "奉贤巴士";
+const LINE_NAME = "莘南专线";
+const START_UP = "莘庄地铁站";
+const END_UP = "南桥汽车站";
+const START_TIME = "06:00-22:00";
+const END_TIME = "06:00-22:00";
+
+/* ========= 票价解析（默认多级售票） ========= */
+const NUM_CN = ["零","壹","贰","叁","肆","伍","陆","柒","捌","玖"];
+function parseFare(s) {
+  if (!s) return { label: "本线 空调多级售票" };
+  if (s.includes("-") || s.includes("~")) {
+    return { label: "本线 空调多级售票" };
+  }
+  var n = parseInt(s, 10);
+  if (!isNaN(n) && n >= 0 && n <= 9) {
+    return { label: "本线 空调单一票价 " + NUM_CN[n] + "元" };
+  }
+  return { label: "本线 空调多级售票" };
+}
+
+/* ========= 颜色 ========= */
+const C = {
+  lineBlue: "#1E5BA8",
+  stationBlack: "#1A1A1A",
+  upRed: "#D0021B",
+  dnGreen: "#1E5BA8",
+  white: "#FFFFFF",
+  arrowRed: "#D0021B",
+  arrowGreen: "#1E5BA8",
+  dotBlue: "#1E5BA8",
+  dotUp: "#D0021B",
+  dotDn: "#1E5BA8"
+};
+
+/* ========= 竖排 SVG 文字 ========= */
+function vtext(x, topY, text, color, size, anchor) {
+  anchor = anchor || "middle";
+  var chars = text.split("");
+  var parts = chars.map((ch, i) =>
+    `<tspan x="${x}" dy="${i === 0 ? 0 : size}">${ch}</tspan>`
+  ).join("");
+  return `<text x="${x}" y="${topY}" fill="${color}"
+           font-family="'XltCn',serif"
+           font-size="${size}"
+           text-anchor="${anchor}"
+           dominant-baseline="hanging">${parts}</text>`;
+}
+
+/* ========= 渲染 ========= */
+function render() {
+  var dir = document.getElementById("dirSelect").value;
+  var fareVal = document.getElementById("fareSelect").value;
+  var fare = parseFare(fareVal);
+  var dirUp = (dir === "up");
+
+  // 构建站点显示顺序
+  var stations = dirUp ? ALL_STATIONS.slice() : ALL_STATIONS.slice().reverse();
+
+  // 左面板
+  var leftHTML = `
+    <div class="left-panel">
+      <div class="operator">${OPERATOR}</div>
+      <div class="divider"></div>
+      <div class="section-title">首末班车</div>
+      <div class="terminal-name">${dirUp ? END_UP : START_UP}</div>
+      <div class="terminal-time">${dirUp ? END_TIME : START_TIME}</div>
+      <div class="terminal-name" style="margin-top:14px">${dirUp ? START_UP : END_UP}</div>
+      <div class="terminal-time">${dirUp ? START_TIME : END_TIME}</div>
+      <div class="divider" style="margin-top:14px"></div>
+      <div class="fare">${fare.label}</div>
+    </div>
+  `;
+
+  // 圆点 X 坐标（相对 map-area，紧贴面板）
+  const areaW = 1660;
+  const dotR = 10;
+  const n = stations.length;
+
+  // ① 根据站点数预估初始字号
+  let nameSize;
+  if (n <= 5) nameSize = 28;
+  else if (n <= 10) nameSize = 22;
+  else if (n <= 16) nameSize = 18;
+  else if (n <= 24) nameSize = 15;
+  else nameSize = 12;
+
+  // ② 圆点间距撑满可用宽度
+  const dotSpacing = (n > 1) ? (areaW - dotR * 2) / (n - 1) : 0;
+  const baseX = dotR;
+  const lineY = 68;              // 对应 MAP_LINE_Y=140
+
+  // ③ 自适应微调
+  if (n > 1) {
+    const minNeeded = nameSize * 1.6;
+    if (dotSpacing < minNeeded) {
+      nameSize = Math.max(10, Math.floor(dotSpacing / 1.6));
+    } else if (n <= 8 && dotSpacing > nameSize * 3 && nameSize < 32) {
+      nameSize = Math.min(32, Math.floor(dotSpacing / 3));
+    }
+  }
+
+  // ④ 标注字号联动
+  const noteSize = Math.max(10, Math.floor(nameSize * 0.7));
+  // ⑤ 站名起始 Y 联动
+  const nameTop = lineY + dotR + Math.round(nameSize * 0.9);
+
+  let dots = "";
+  const lineStartX = baseX;
+  const lineEndX = baseX + dotSpacing * (n - 1);
+
+  for (var i = 0; i < n; i++) {
+    var st = stations[i];
+    var cx = baseX + dotSpacing * i;
+
+    var dotColor, nameColor, noteText, noteColor;
+    if (st.type === "up") {
+      dotColor = C.dotUp; nameColor = C.upRed; noteText = "上行单向"; noteColor = C.upRed;
+    } else if (st.type === "dn") {
+      dotColor = C.dotDn; nameColor = C.dnGreen; noteText = "下行单向"; noteColor = C.dnGreen;
+    } else {
+      dotColor = C.dotBlue; nameColor = C.stationBlack; noteText = null; noteColor = null;
+    }
+
+    // 圆点
+    dots += `<circle cx="${cx}" cy="${lineY}" r="${dotR}" fill="${dotColor}"/>`;
+
+    // 竖排站名（SVG 坐标相对 map-area）
+    dots += vtext(cx, nameTop, st.name, nameColor, nameSize);
+
+    // 竖排标注（动态位置，跟随实际站名长度）
+    if (noteText) {
+      var noteTopBase = nameTop + st.name.length * nameSize + 4;
+      dots += vtext(cx, noteTopBase, noteText, noteColor, noteSize);
+    }
+  }
+
+  // 底部方向箭头
+  var bottomArrowHTML = dirUp
+    ? `<div class="bottom-arrow">
+         <svg viewBox="0 0 40 20"><line x1="5" y1="10" x2="28" y2="10" stroke="${C.arrowRed}" stroke-width="5" stroke-linecap="round"/><polygon points="38,10 28,3 28,17" fill="${C.arrowRed}"/></svg>
+       </div>`
+    : `<div class="bottom-arrow" style="text-align:left;padding-left:10px;padding-right:0">
+         <svg viewBox="0 0 40 20"><line x1="12" y1="10" x2="35" y2="10" stroke="${C.arrowGreen}" stroke-width="5" stroke-linecap="round"/><polygon points="2,10 12,3 12,17" fill="${C.arrowGreen}"/></svg>
+       </div>`;
+
+  var rightHTML = `
+    <div class="right-area">
+      <div class="line-name">${LINE_NAME}站级线路图</div>
+      <div class="map-area">
+        <svg viewBox="0 0 1660 325" preserveAspectRatio="none">
+          <!-- 线路水平线 -->
+          <line x1="${lineStartX}" y1="${lineY}" x2="${lineEndX}" y2="${lineY}"
+                stroke="${C.lineBlue}" stroke-width="4"/>
+          ${dots}
+        </svg>
+      </div>
+    </div>
+    ${bottomArrowHTML}
+  `;
+
+  document.getElementById("canvas").innerHTML = leftHTML + rightHTML;
+}
+
+document.getElementById("dirSelect").addEventListener("change", render);
+document.getElementById("fareSelect").addEventListener("change", render);
+
+render();
+</script>
+</body>
+</html>

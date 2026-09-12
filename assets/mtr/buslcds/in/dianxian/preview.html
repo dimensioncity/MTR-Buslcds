@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>MTR Buslcds · 车内LED电显预览</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#1a1a1a;color:#ddd;font-family:"Microsoft YaHei",sans-serif;padding:16px}
+h1{font-size:16px;margin:0 0 12px;color:#fff}
+.wrap{display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.panel{background:#222;border-radius:6px;padding:14px;min-width:290px}
+.panel h2{font-size:14px;margin:0 0 10px;color:#4fc3f7}
+.row{display:flex;align-items:center;margin-bottom:8px;gap:8px}
+.row label{width:120px;font-size:12px;color:#aaa;flex-shrink:0}
+.row select,.row input[type=text],.row input[type=number]{flex:1;background:#333;color:#fff;border:1px solid #444;border-radius:3px;padding:4px 6px;font-size:12px}
+.row input[type=checkbox]{accent-color:#4fc3f7}
+.cvs-wrap{background:#000;padding:8px;border-radius:6px;flex-shrink:0;display:flex;flex-direction:column;gap:6px}
+.cvs-wrap canvas{display:block;image-rendering:pixelated;width:900px;height:150px}
+.indicator{background:#0a0a0a;border:1px solid #333;border-radius:3px;padding:6px 10px;font-family:"Consolas","Courier New",monospace;font-size:12px;color:#4fc3f7}
+.progress-bar{height:3px;background:#333;border-radius:2px;overflow:hidden;margin-top:4px}
+.progress-bar-fill{height:100%;background:#4fc3f7;transition:none;width:0%}
+.tag{font-size:11px;color:#888;margin-top:8px;padding-top:6px;border-top:1px dashed #333;word-break:break-all}
+.divider{border:none;border-top:1px dashed #444;margin:10px 0}
+.hint{font-size:11px;color:#666;flex:1}
+.footer{margin-top:16px;padding:12px;background:#222;border-radius:6px;font-size:12px;color:#bbb;line-height:1.8}
+.footer a{color:#4fc3f7;text-decoration:none}
+</style>
+</head>
+<body>
+<h1>MTR Buslcds · 车内LED电显预览 (in-dianxian) — Excel 每行一轮播</h1>
+<div class="wrap">
+<div class="panel">
+<h2>控制面板</h2>
+<div class="row"><label>Variant</label><select id="cfg-variant"><option value="bw">BW (红色单色)</option><option value="kl">KL (LED)</option></select></div>
+<div class="row"><label>Sub 模式</label><select id="cfg-sub">
+  <option value="qs">qs 简版</option><option value="td">td 长欢迎</option>
+  <option value="apep">apep 乘客们</option><option value="kh">kh 本次班车</option>
+  <option value="za">za 温度轮播</option><option value="kl">kl 完整</option>
+  <option value="rm">rm 北京时间</option><option value="ls">ls 中英双行</option>
+  <option value="bw">bw 同kl</option>
+</select></div>
+<div class="row"><label>State</label><select id="cfg-state"><option value="none">none 无线路</option><option value="start">start 起点</option><option value="running">running 运行中</option><option value="arrive">arrive 到站</option><option value="terminal">terminal 终点</option></select></div>
+<hr class="divider">
+<div class="row"><label>起点 startCN</label><select id="cfg-start"><option>人民广场</option><option>陆家嘴</option><option>南京东路</option><option>静安寺</option><option>徐家汇</option><option>上海火车站</option><option>上海南站</option></select></div>
+<div class="row"><label>下一站 nextCN</label><select id="cfg-next"><option>人民广场</option><option>陆家嘴</option><option>南京东路</option><option>静安寺</option><option>徐家汇</option><option>上海火车站</option><option>上海南站</option></select></div>
+<div class="row"><label>当前 currentCN</label><select id="cfg-current"><option>人民广场</option><option>陆家嘴</option><option>南京东路</option><option>静安寺</option><option>徐家汇</option><option>上海火车站</option><option>上海南站</option></select></div>
+<div class="row"><label>终点 endCN</label><select id="cfg-end"><option>人民广场</option><option>陆家嘴</option><option>南京东路</option><option>静安寺</option><option>徐家汇</option><option>上海火车站</option><option>上海南站</option></select></div>
+<hr class="divider">
+<div class="row"><label>温度</label><input type="number" id="cfg-temp" value="29" min="-10" max="50"></div>
+<div class="row"><label>线路号</label><input type="text" id="cfg-route" value="18"></div>
+<hr class="divider">
+<div class="row"><label>colorful</label><input type="checkbox" id="cfg-colorful"><span class="hint">KL 仅 apep/kh</span></div>
+<div class="row kl-only"><label>right_temperature</label><input type="checkbox" id="cfg-righttemp"><span class="hint">右侧温度 (KL)</span></div>
+<div class="row kl-only"><label>KL 颜色</label><select id="cfg-color"><option value="orange">orange #FFCA3C</option><option value="red">red #FF3C28</option></select></div>
+<div class="tag" id="status-tag"></div>
+</div>
+<div class="cvs-wrap">
+<canvas id="led" width="1200" height="200"></canvas>
+<div class="indicator" id="indicator">显示 line 1 / 1</div>
+<div class="progress-bar"><div class="progress-bar-fill" id="progress-fill"></div></div>
+</div>
+</div>
+<div class="footer">
+  预览镜像自 <code>in/dianxian/{bw,kl}/main.js</code> — Excel 表格每行 = 一轮播项。<br>
+  每行内容独立轮播, 固定显示 5s 后切下一行, 超长则滚动。<br>
+  车外电显预览 → <a href="../out/dianxian/preview.html">out/dianxian/preview.html</a>
+</div>
+
+<script>
+/* MTR Buslcds · in-dianxian 单行轮播预览 — 逐行镜像 Java main.js */
+const canvas=document.getElementById("led");
+const ctx=canvas.getContext("2d");
+const IND=document.getElementById("indicator");
+const PROG=document.getElementById("progress-fill");
+
+const BW_FONT='"Consolas","Courier New","Lucida Console",monospace';
+const KL_FONT='"Impact","Arial Black","Microsoft YaHei",sans-serif';
+const KC={W:"#ffffff",BL:"#3A6FD4",G:"#33DD66",Y:"#FFCA3C",R:"#FF3C28"};
+const BW_C="#FF4632";
+
+const SE={"人民广场":"People's Square","陆家嘴":"Lujiazui","南京东路":"East Nanjing Rd",
+          "静安寺":"Jing'an Temple","徐家汇":"Xujiahui","上海火车站":"Shanghai Railway Station",
+          "上海南站":"Shanghai South Railway Station"};
+function en(c){return SE[c]||c}
+
+function cfg(){
+  return{
+    v:document.getElementById("cfg-variant").value,
+    s:document.getElementById("cfg-sub").value,
+    st:document.getElementById("cfg-state").value,
+    cn:{
+      start:document.getElementById("cfg-start").value,
+      cur:document.getElementById("cfg-current").value,
+      nxt:document.getElementById("cfg-next").value,
+      end:document.getElementById("cfg-end").value
+    },
+    t:+document.getElementById("cfg-temp").value||29,
+    route:document.getElementById("cfg-route").value,
+    cf:document.getElementById("cfg-colorful").checked,
+    rt:document.getElementById("cfg-righttemp").checked,
+    col:document.getElementById("cfg-color").value
+  };
+}
+
+function tStr(c){return c.v==="bw"?c.t+" 度":c.t+"\u00b0C"}
+function bjT(){
+  const n=new Date(),d=["日","一","二","三","四","五","六"][n.getDay()];
+  return String.format("");
+  return n.getMonth()+1+"月"+n.getDate()+"日星期"+d+" "+String(n.getHours()).padStart(2,"0")+"时"+String(n.getMinutes()).padStart(2,"0")+"分";
+}
+
+/* ============ BW 构建 ============ */
+function _bw(text){return{text:text,color:BW_C,fontSize:72,font:BW_FONT,maxWidth:1160,speed:0.6,pauseStart:300,pauseEnd:300}}
+
+function bwQs(info,c){
+  const T=tStr(c),L=_bw;
+  if(!c.route)return[L("欢迎乘坐！"),L("当前温度："+T)];
+  if(c.st==="start")return[L("欢迎乘坐"+c.route+"公交车,方向"+info.endCN)];
+  if(c.st==="arrive")return[L(info.curCN+"  到了"),L("We are arriving at "+en(info.curCN)),L("当前温度："+T)];
+  if(c.st==="terminal")return[L(info.curCN+"  到了"),L("We are arriving at "+en(info.curCN)),L("当前温度："+T)];
+  return[L("下一站 "+info.nxtCN),L("Next stop is "+en(info.nxtCN)),L("当前温度："+T)];
+}
+
+function bwTd(info,c){
+  const T=tStr(c),L=_bw;
+  const car1="请保管好随身携带的财物",car2="欢迎乘坐本公司公交车",car3="请站稳扶好";
+  if(!c.route)return[L("欢迎乘坐"),L("当前温度："+T)];
+  const buy="上车请主动买票";
+  const wl="乘客们，你们好！您现在乘坐的是"+c.route+"公交车，方向"+info.endCN+"。"+buy+"。文明规范乘车从你我做起。";
+  const goodby="下车时请检查随身携带的物品，请不要遗忘在车厢内。欢迎您再次乘坐"+c.route+"公交车，并提出宝贵意见。";
+  if(c.st==="start")return[L(wl),L(car1),L(car2),L(car3)];
+  if(c.st==="terminal")return[L(goodby),L(car1),L(car2),L(car3)];
+  if(c.st==="arrive")return[L(info.curCN+"到了"),L(car1),L(car2),L(car3)];
+  return[L("下一站："+info.nxtCN),L(car1),L(car2),L(car3)];
+}
+
+function bwApep(info,c){
+  const T=tStr(c),L=_bw;
+  if(!c.route)return[L("欢迎乘坐！"),L("当前温度："+T)];
+  if(c.st==="start")return[L("乘客们，你们好，欢迎您乘坐"+c.route+"公交车，方向"+info.endCN+"。")];
+  if(c.st==="arrive"||c.st==="terminal")return[L(info.curCN+"  到了"),L("We are now arriving at "+en(info.curCN)),L("当前温度："+T)];
+  return[L("下一站 "+info.nxtCN),L("Next stop is "+en(info.nxtCN)),L("当前温度："+T)];
+}
+
+function bwKh(info,c){
+  const T=tStr(c),L=_bw,ben="欢迎乘坐本次班车";
+  if(!c.route)return[L(ben),L("当前温度："+T)];
+  if(c.st==="start"||c.st==="terminal")return[L(ben),L("当前温度："+T)];
+  if(c.st==="arrive")return[L(info.curCN+"  到了"),L("We are arriving at: "+en(info.curCN)),L("当前温度："+T)];
+  return[L("下一站："+info.nxtCN),L("The next stop is: "+en(info.nxtCN)),L("当前温度："+T)];
+}
+
+function bwZa(info,c){
+  const T=tStr(c),L=_bw;
+  if(!c.route)return[L("欢迎乘坐"),L("当前温度："+T)];
+  const buy="上车请主动买票";
+  const wl="乘客们，你们好！您现在乘坐的是"+c.route+"公交车，方向"+info.endCN+"。"+buy+"。文明规范乘车从你我做起。";
+  if(c.st==="start"||c.st==="terminal")return[L(wl),L("当前温度："+T)];
+  if(c.st==="arrive")return[L(info.curCN+"到了。"),L("We are arriving at "+en(info.curCN)+"."),L("当前温度："+T),L(c.route+"公交车，方向"+info.endCN+"。")];
+  return[L("下一站"+info.nxtCN+"。"),L("Next stop is "+en(info.nxtCN)),L("当前温度："+T),L(c.route+"公交车，方向"+info.endCN+"。")];
+}
+
+function bwKlSub(info,c){
+  const T=tStr(c),L=_bw;
+  if(!c.route)return[L("欢迎乘坐"),L("当前温度："+T)];
+  const buy="上车请主动买票";
+  const wl="乘客们，你们好！您现在乘坐的是"+c.route+"公交车，方向"+info.endCN+"。"+buy+"。文明规范乘车从你我做起。";
+  const goodby="下车时请检查随身携带的物品，请不要遗忘在车厢内。欢迎您再次乘坐"+c.route+"公交车，并提出宝贵意见。";
+  if(c.st==="start")return[L(wl),L("当前温度："+T)];
+  if(c.st==="terminal")return[L(goodby),L("当前温度："+T)];
+  if(c.st==="arrive")return[L(info.curCN+"  到了"),L(en(info.curCN)),L("当前温度："+T)];
+  return[L("下一站 "+info.nxtCN),L("Next stop is "+en(info.nxtCN)),L("当前温度："+T)];
+}
+
+function bwRm(info,c){
+  const T=tStr(c),L=_bw;
+  if(!c.route)return[L("欢迎乘坐"),L("当前温度："+T)];
+  const bt="北京时间："+String(new Date().getMonth()+1).padStart(2,"0")+"月"+String(new Date().getDate()).padStart(2,"0")+"日星期"+["日","一","二","三","四","五","六"][new Date().getDay()]+" "+String(new Date().getHours()).padStart(2,"0")+"时"+String(new Date().getMinutes()).padStart(2,"0")+"分";
+  if(c.st==="start"||c.st==="terminal")return[L(info.curCN),L(bt),L("当前温度："+T)];
+  if(c.st==="arrive")return[L(info.curCN+"  到了"),L(bt),L("当前温度："+T)];
+  return[L("下一站："+info.nxtCN),L(bt),L("当前温度："+T)];
+}
+
+function bwLs(info,c){
+  const T=tStr(c),L=_bw;
+  if(!c.route)return[L("欢迎乘坐"),L("当前温度："+T)];
+  if(c.st==="start"||c.st==="terminal")return[L(info.curCN),L(en(info.curCN)),L("当前温度："+T)];
+  if(c.st==="arrive")return[L(info.curCN+"  到了"),L("We are arriving at  "+en(info.curCN)),L("当前温度："+T)];
+  return[L("下一站："+info.nxtCN),L("The next stop is  "+en(info.nxtCN)),L("当前温度："+T)];
+}
+
+/* ============ KL 构建 ============ */
+function _kl(text,color){return{text:text,color:color||KL_SKY(c),fontSize:72,font:KL_FONT,maxWidth:1160,speed:2.0,pauseStart:30,pauseEnd:30}}
+function KL_SKY(c){return c.col==="red"?KC.R:KC.Y}
+function _klT(c){return c.v==="bw"?null:(c.rt?null:"当前温度："+tStr(c))}
+
+function buildKl(c,st,s,cfg){
+  const T=_klT(c),LED=KL_SKY(c);
+  const info={curCN:c.cn.cur,curEN:en(c.cn.cur),nxtCN:c.cn.nxt,nxtEN:en(c.cn.nxt),endCN:c.cn.end,route:c.route};
+  // 这里复用 BW 的 sub 构建, 但用 KL 颜色
+  // 简化: 直接映射
+  return null; // placeholder, 后面用实际构建
+}
+
+/* ============ KL 完整构建 ============ */
+function klAll(info,c){
+  const T=_klT(c),LED=KL_SKY(c);
+  const M=(t,col)=>_kl(t,col||LED);
+  // 直接按 sub 路由 (简化)
+  if(c.s==="kl"||c.s==="bw"){
+    const buy="上车请主动买票";
+    const wl="乘客们，你们好！您现在乘坐的是"+c.route+"公交车，方向"+info.endCN+"。"+buy+"。文明规范乘车从你我做起。";
+    const gd="下车时请检查随身携带的物品，请不要遗忘在车厢内。欢迎您再次乘坐"+c.route+"公交车，并提出宝贵意见。";
+    if(!c.route)return[M("欢迎乘坐"),M("当前温度："+tStr(c))];
+    if(c.st==="start")return[M(wl),M("当前温度："+tStr(c))];
+    if(c.st==="terminal")return[M(gd),M("当前温度："+tStr(c))];
+    if(c.st==="arrive")return[M(info.curCN+"  到了"),M(en(info.curCN)),M("当前温度："+tStr(c))];
+    return[M("下一站 "+info.nxtCN),M("Next stop is "+en(info.nxtCN)),M("当前温度："+tStr(c))];
+  }
+  return bwSubDirect(info,c).map(t=>M(t,LED));
+}
+function bwSubDirect(info,c){
+  // 仅文本 (用于 KL 非 colorful)
+  const T="当前温度："+tStr(c);
+  if(c.s==="kl"||c.s==="bw"){
+    const buy="上车请主动买票";
+    if(!c.route)return["欢迎乘坐",T];
+    const wl="乘客们，你们好！您现在乘坐的是"+c.route+"公交车，方向"+info.endCN+"。"+buy+"。文明规范乘车从你我做起。";
+    const gd="下车时请检查随身携带的物品，请不要遗忘在车厢内。欢迎您再次乘坐"+c.route+"公交车，并提出宝贵意见。";
+    if(c.st==="start")return[wl,T];
+    if(c.st==="terminal")return[gd,T];
+    if(c.st==="arrive")return[info.curCN+"  到了",en(info.curCN),T];
+    return["下一站 "+info.nxtCN,"Next stop is "+en(info.nxtCN),T];
+  }
+  return["请根据实际 sub 查看 main.js 源码"];
+}
+
+/* ============ 总路由 ============ */
+function buildLines(c){
+  const info={curCN:c.cn.cur,curEN:en(c.cn.cur),nxtCN:c.cn.nxt,nxtEN:en(c.cn.nxt),endCN:c.cn.end,route:c.route};
+  if(c.v==="bw"){
+    switch(c.s){
+      case"qs":return bwQs(info,c);
+      case"td":return bwTd(info,c);
+      case"apep":return bwApep(info,c);
+      case"kh":return bwKh(info,c);
+      case"za":return bwZa(info,c);
+      case"kl":case"bw":return bwKlSub(info,c);
+      case"rm":return bwRm(info,c);
+      case"ls":return bwLs(info,c);
+      default:return bwKlSub(info,c);
+    }
+  }else{
+    // KL — 简化处理: 按 sub 生成颜色行
+    return klSubDispatch(info,c);
+  }
+}
+
+function klSubDispatch(info,c){
+  const LED=KL_SKY(c), T="当前温度："+tStr(c);
+  const M=(t,col)=>({text:t,color:col||LED,fontSize:72,font:KL_FONT,maxWidth:1160,speed:2.0,pauseStart:30,pauseEnd:30});
+  const buy="上车请主动买票";
+  if(c.cf && c.s==="apep"){
+    // colorful apep
+    if(!c.route)return[M("欢迎乘坐！",KC.Y),M(T,KC.G)];
+    if(c.st==="start")return[M("欢迎乘坐！",KC.Y),M(T,KC.G)];
+    if(c.st==="arrive"||c.st==="terminal")return[M(info.curCN+"  到了",KC.W),M("We are now arriving at "+en(info.curCN),KC.BL),M(T,KC.G)];
+    return[M("下一站 "+info.nxtCN,KC.W),M("Next stop is "+en(info.nxtCN),KC.BL),M(T,KC.G)];
+  }
+  if(c.cf && c.s==="kh"){
+    // colorful kh
+    const PREFIX={"color":KC.R}, MAIN={"color":KC.Y}, SUFFIX={"color":KC.G};
+    if(!c.route||c.st==="start"||c.st==="terminal")return[M("欢迎乘坐本次班车",KC.R),M(T,KC.G)];
+    if(c.st==="arrive"){
+      return[
+        {prefixText:"",mainText:info.curCN,suffixText:"  到了",prefixColor:KC.Y,mainColor:KC.Y,suffixColor:KC.G,fontSize:72,font:KL_FONT,maxWidth:1160,speed:2.0,pauseStart:30,pauseEnd:30},
+        M("We are arriving at: "+en(info.curCN),KC.Y),
+        M(T,KC.G)
+      ];
+    }
+    return[
+      {prefixText:"下一站：",mainText:info.nxtCN,suffixText:"",prefixColor:KC.R,mainColor:KC.Y,suffixColor:KC.G,fontSize:72,font:KL_FONT,maxWidth:1160,speed:2.0,pauseStart:30,pauseEnd:30},
+      M("The next stop is: "+en(info.nxtCN),KC.Y),
+      M(T,KC.G)
+    ];
+  }
+  // 普通 KL sub
+  const wl="乘客们，你们好！您现在乘坐的是"+c.route+"公交车，方向"+info.endCN+"。"+buy+"。文明规范乘车从你我做起。";
+  const gd="下车时请检查随身携带的物品，请不要遗忘在车厢内。欢迎您再次乘坐"+c.route+"公交车，并提出宝贵意见。";
+  if(c.s==="kl"||c.s==="bw"){
+    if(!c.route)return[M("欢迎乘坐"),M(T)];
+    if(c.st==="start")return[M(wl),M(T)];
+    if(c.st==="terminal")return[M(gd),M(T)];
+    if(c.st==="arrive")return[M(info.curCN+"  到了"),M(en(info.curCN)),M(T)];
+    return[M("下一站 "+info.nxtCN),M("Next stop is "+en(info.nxtCN)),M(T)];
+  }
+  if(c.s==="qs"){
+    if(!c.route)return[M("欢迎乘坐"),M(T)];
+    if(c.st==="start")return[M("欢迎乘坐"+c.route+"公交车,方向"+info.endCN)];
+    if(c.st==="arrive")return[M(info.curCN+"  到了"),M("We are arriving at "+en(info.curCN)),M(T)];
+    return[M("下一站 "+info.nxtCN),M("Next stop is "+en(info.nxtCN)),M(T)];
+  }
+  if(c.s==="td"){
+    const car1="请保管好随身携带的财物",car2="欢迎乘坐本公司公交车",car3="请站稳扶好";
+    if(!c.route)return[M("欢迎乘坐"),M(T)];
+    if(c.st==="start")return[M(wl),M(car1),M(car2),M(car3)];
+    if(c.st==="terminal")return[M(gd),M(car1),M(car2),M(car3)];
+    if(c.st==="arrive")return[M(info.curCN+"到了"),M(car1),M(car2),M(car3)];
+    return[M("下一站："+info.nxtCN),M(car1),M(car2),M(car3)];
+  }
+  if(c.s==="ls"){
+    if(!c.route)return[M("欢迎乘坐"),M(T)];
+    if(c.st==="start"||c.st==="terminal")return[M(info.curCN),M(en(info.curCN)),M(T)];
+    if(c.st==="arrive")return[M(info.curCN+"  到了"),M("We are arriving at  "+en(info.curCN)),M(T)];
+    return[M("下一站："+info.nxtCN),M("The next stop is  "+en(info.nxtCN)),M(T)];
+  }
+  // fallback: 和 kl 一样
+  return klSubDispatch({curCN:c.cn.cur,curEN:en(c.cn.cur),nxtCN:c.cn.nxt,nxtEN:en(c.cn.nxt),endCN:c.cn.end,route:c.route},Object.assign({},c,{s:"kl"}));
+}
+
+/* ============ 单行轮播引擎 ============ */
+let _LINE_IDX=0,_LINES_SIG="",_FIXED={},_SCROLL={};
+function linesSig(lines){let s="";for(const l of lines)s+="|"+(l.text||"")+"|"+(l.prefixText||"")+"|"+(l.mainText||"")+"|"+(l.suffixText||"");return s}
+function updScroll(ss){const tw=ctx.measureText(ss.t).width;
+  if(ss.st==="pauseStart"){ss.f++;if(ss.f>=ss.pS){ss.st="scroll";ss.f=0;ss.x=ss.mw}}
+  else if(ss.st==="scroll"){ss.x-=ss.spd;if(ss.x+tw<=0){ss.st="pauseEnd";ss.f=0}}
+  else{ss.f++;if(ss.f>=ss.pE){ss.st="pauseStart";ss.f=0;ss.x=ss.mw;return true}}return false}
+
+function draw(){
+  const c=cfg(),lines=buildLines(c),N=lines.length;
+  const sig=linesSig(lines);
+  if(sig!==_LINES_SIG){_LINES_SIG=sig;_LINE_IDX=0;_FIXED={};_SCROLL={}}
+
+  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle="#000";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.restore();
+  if(N===0){requestAnimationFrame(draw);return}
+
+  const i=_LINE_IDX,ln=lines[i];
+  ctx.font=(ln.fontSize||72)+"px "+(ln.font||BW_FONT);
+  const PAD=40,panelH=200,centerY=panelH/2+ln.fontSize*0.85/2;
+  const maxW=ln.maxWidth||1160;
+  let done=false;
+
+  if(ln.prefixText||ln.suffixText){
+    // prefix/main/suffix 三色分离 (kl colorful kh)
+    if(ln.prefixText){
+      const pw=ctx.measureText(ln.prefixText).width;
+      const mw=ctx.measureText(ln.mainText).width;
+      const sw=ln.suffixText?ctx.measureText(ln.suffixText).width:0;
+      const fullW=pw+mw+sw;
+      if(fullW+PAD<=maxW){
+        // 静态居中
+        const leftX=(maxW-fullW)/2;
+        ctx.fillStyle=ln.prefixColor;ctx.fillText(ln.prefixText,leftX,centerY);
+        ctx.fillStyle=ln.mainColor;ctx.fillText(ln.mainText,leftX+pw,centerY);
+        if(sw>0){ctx.fillStyle=ln.suffixColor;ctx.fillText(ln.suffixText,leftX+pw+mw,centerY)}
+      }else{
+        // 前缀固定, main+suffix 滚动
+        ctx.fillStyle=ln.prefixColor;ctx.fillText(ln.prefixText,PAD,centerY);
+        const sk="prf_"+i;
+        const scrollText=ln.mainText+(ln.suffixText||"");
+        if(!_SCROLL[sk]||_SCROLL[sk].t!==scrollText)_SCROLL[sk]={st:"pauseStart",f:0,x:maxW-PAD-pw-10,t:scrollText};
+        updScroll(_SCROLL[sk]);
+        ctx.fillStyle=ln.mainColor;ctx.fillText(ln.mainText,Math.round(_SCROLL[sk].x)+PAD+pw,centerY);
+        if(sw>0){ctx.fillStyle=ln.suffixColor;ctx.fillText(ln.suffixText,Math.round(_SCROLL[sk].x)+PAD+pw+mw,centerY)}
+      }
+    }
+    const fk="cf_"+i;
+    if(!_FIXED[fk]||_FIXED[fk].text!==(ln.text||ln.mainText))_FIXED[fk]={text:ln.text||ln.mainText,timer:0};
+    _FIXED[fk].timer++;
+    if(_FIXED[fk].timer>=300){_FIXED[fk].timer=0;done=true}
+    PROG.style.width=(_FIXED[fk].timer/300*100).toFixed(1)+"%";
+  }else{
+    const tw=ctx.measureText(ln.text).width;
+    if(tw<=maxW){
+      const fk="f_"+i;
+      if(!_FIXED[fk]||_FIXED[fk].text!==ln.text)_FIXED[fk]={text:ln.text,timer:0};
+      _FIXED[fk].timer++;
+      if(_FIXED[fk].timer>=300){_FIXED[fk].timer=0;done=true}
+      ctx.fillStyle=ln.color;
+      ctx.fillText(ln.text,(maxW-PAD)/2-tw/2+PAD,centerY);
+      PROG.style.width=(_FIXED[fk].timer/300*100).toFixed(1)+"%";
+    }else{
+      const sk="s_"+i;
+      let ss=_SCROLL[sk];
+      if(!ss||ss.t!==ln.text)ss={st:"pauseStart",f:0,x:maxW,t:ln.text};
+      const ds=updScroll(ss);
+      ctx.fillStyle=ln.color;
+      ctx.fillText(ln.text,Math.round(ss.x),centerY);
+      _SCROLL[sk]=ss;
+      const sf=Math.ceil((maxW+tw)/ln.speed),total=ss.pS+sf+ss.pE;
+      let pDone;
+      if(ss.st==="pauseStart")pDone=ss.f;else if(ss.st==="scroll")pDone=ss.pS+(maxW-ss.x)/ln.speed;else pDone=ss.pS+sf+ss.f;
+      PROG.style.width=Math.min(1,pDone/total*100).toFixed(1)+"%";
+      if(ds)done=true;
+    }
+  }
+
+  if(done){_LINE_IDX=(_LINE_IDX+1)%N;_FIXED={};_SCROLL={}}
+  IND.textContent="显示 line "+(_LINE_IDX+1)+" / "+N+"  ·  "+c.v.toUpperCase()+"/"+c.s+"/"+c.st;
+  document.getElementById("status-tag").textContent=
+    c.v.toUpperCase()+" / "+c.s+" / "+c.st+" / "+c.t+(c.v==="bw"?" 度":"°C")+" / "+c.route+"路 → "+c.cn.end;
+  requestAnimationFrame(draw);
+}
+
+function vis(){document.querySelectorAll(".kl-only").forEach(e=>e.style.display=cfg().v==="kl"?"flex":"none")}
+document.querySelectorAll("select,input[type=checkbox],input[type=number],input[type=text]")
+  .forEach(e=>e.addEventListener("change",()=>{vis();_LINE_IDX=0;_LINES_SIG="";_FIXED={};_SCROLL={}}));
+vis();requestAnimationFrame(draw);
+</script>
+</body>
+</html>

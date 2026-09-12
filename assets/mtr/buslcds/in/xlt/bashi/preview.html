@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>巴士二公司 - 线路图预览</title>
+<style>
+  @font-face {
+    font-family: 'CompanyFont';
+    src: url('../../font/company.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #333; display: flex; flex-direction: column; align-items: center; padding: 20px; font-family: "Microsoft YaHei", sans-serif; }
+  h2 { color: #fff; margin-bottom: 20px; }
+  .preview-wrapper { transform-origin: top center; }
+  .lcd { width: 2000px; height: 400px; background: #fff; position: relative; box-shadow: 0 4px 20px rgba(0,0,0,0.5); overflow: hidden; }
+  .lcd-header { position: absolute; top: 0; left: 0; right: 0; height: 55px; background: #fff; border-bottom: 2px solid #009933; }
+  .lcd-company { position: absolute; top: 8px; left: 25px; color: #006B3C; font-size: 26px; font-weight: bold; display: flex; align-items: center; gap: 10px; }
+  .lcd-company > span { font-family: 'CompanyFont', "Microsoft YaHei", sans-serif; }
+  .lcd-logo { width: 40px; height: 40px; overflow: hidden; }
+  .lcd-logo img { width: 100%; height: 100%; object-fit: contain; }
+  .lcd-title { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); color: #006B3C; font-size: 36px; font-weight: bold; }
+  .lcd-bottom { position: absolute; bottom: 0; left: 0; right: 0; height: 80px; background: #006B3C; color: #fff; padding: 10px 30px; display: flex; flex-direction: column; justify-content: center; }
+  .lcd-bottom-row1 { display: flex; justify-content: space-between; align-items: center; font-size: 24px; font-weight: bold; }
+  .lcd-bottom-row2 { display: flex; justify-content: space-between; align-items: center; font-size: 18px; margin-top: 4px; }
+  .lcd-bottom-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 18px; white-space: nowrap; }
+</style>
+</head>
+<body>
+<h2>巴士二公司 · 线路图预览 (50%缩放)</h2>
+<div class="preview-wrapper" style="transform: scale(0.5);">
+  <div class="lcd">
+    <div class="lcd-header">
+      <div class="lcd-company">
+        <div class="lcd-logo"><img src="../../../image/kl/logo/bashi.png" alt="logo"></div>
+        <span>巴士二公司</span>
+      </div>
+      <div class="lcd-title">1127路站级示意图</div>
+    </div>
+    <canvas id="routeCanvas" width="2000" height="340" style="position:absolute;top:55px;left:0;"></canvas>
+    <div class="lcd-bottom">
+      <div class="lcd-bottom-row1">
+        <span>古丹路申江南路</span>
+        <span class="lcd-bottom-center">本线 空调单一票价 贰元    服务热线: 64925849</span>
+        <span style="text-align:right;">新环西路新环北路</span>
+      </div>
+      <div class="lcd-bottom-row2">
+        <span>首末班 06:00-22:00 行</span>
+        <span style="text-align:right;">末班 06:00-22:00 行</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('routeCanvas');
+const ctx = canvas.getContext('2d');
+
+const stations = [
+  { name: '古丹路申江南路', type: 'both' },
+  { name: '新浩路古丹路', type: 'up' },
+  { name: '古恩路申江南路', type: 'up' },
+  { name: '申江南路古恩路', type: 'dn' },
+  { name: '申江南路坦直社区', type: 'dn' },
+  { name: '申江南路下盐路', type: 'both' },
+  { name: '申江南路坦仁路', type: 'both' },
+  { name: '申江南路仁义', type: 'both' },
+  { name: '航三公路申江南路', type: 'both' },
+  { name: '航三公路康新公路', type: 'both' },
+  { name: '康新公路航三公路', type: 'both' },
+  { name: '康新公路新卫路', type: 'both' },
+  { name: '康新公路新环北路', type: 'both' },
+  { name: '新环北路康新公路', type: 'both' },
+  { name: '新环西路新环北路', type: 'both' },
+];
+
+const W = 2000, H = 340;
+const DOT_R = 11;
+const leftX = 30, rightX = W - 30;
+const gap = (W - 60) / (stations.length - 1);
+const LINE_Y = 200;
+const BOTTOM_BAR_TOP_IN_CANVAS = 320 - 55;  // LCD底栏顶320 - canvas top 55
+const arrowY = BOTTOM_BAR_TOP_IN_CANVAS - 12 * 0.7 - 3;
+
+ctx.fillStyle = '#fff';
+ctx.fillRect(0, 0, W, H);
+
+ctx.strokeStyle = '#009933';
+ctx.lineWidth = 5;
+ctx.beginPath();
+ctx.moveTo(leftX, LINE_Y);
+ctx.lineTo(rightX, LINE_Y);
+ctx.stroke();
+
+ctx.fillStyle = '#D0021B';
+ctx.beginPath();
+ctx.arc(leftX, LINE_Y, DOT_R, 0, Math.PI * 2);
+ctx.fill();
+
+ctx.fillStyle = '#1E5BA8';
+ctx.beginPath();
+ctx.arc(rightX, LINE_Y, DOT_R, 0, Math.PI * 2);
+ctx.fill();
+
+function drawArrow(x, y, size, color, dir) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  if (dir === 'left') {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + size * 1.4, y - size);
+    ctx.lineTo(x + size * 1.4, y + size);
+  } else {
+    ctx.moveTo(x, y);
+    ctx.lineTo(x - size * 1.4, y - size);
+    ctx.lineTo(x - size * 1.4, y + size);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+drawArrow(leftX + 30, arrowY, 12, '#D0021B', 'right');
+drawArrow(rightX - 30, arrowY, 12, '#1E5BA8', 'left');
+
+const nameSize = 14;
+const noteSize = 10;
+ctx.font = 'bold ' + (nameSize * 1.5) + 'px "Microsoft YaHei"';
+
+for (let i = 0; i < stations.length; i++) {
+  const cx = leftX + gap * i;
+  const st = stations[i];
+  
+  let dotColor;
+  if (st.type === 'up') dotColor = '#D0021B';
+  else if (st.type === 'dn') dotColor = '#1E5BA8';
+  else dotColor = '#009933';
+  ctx.fillStyle = dotColor;
+  ctx.beginPath();
+  ctx.arc(cx, LINE_Y, DOT_R, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.fillStyle = st.type === 'up' ? '#D0021B' : st.type === 'dn' ? '#1E5BA8' : '#1A1A1A';
+  ctx.font = 'bold ' + nameSize + 'px "Microsoft YaHei"';
+  const chars = st.name.split('');
+  const firstCharW = ctx.measureText(chars[0]).width;
+  const textX = cx - firstCharW / 2;
+  let textY = LINE_Y + DOT_R + nameSize * 0.9;
+  for (const ch of chars) {
+    ctx.fillText(ch, textX, textY);
+    textY += nameSize * 1.2;
+  }
+  
+  if (st.type === 'up') {
+    ctx.fillStyle = '#D0021B';
+    ctx.font = 'bold ' + noteSize + 'px "Microsoft YaHei"';
+    ctx.textAlign = 'center';
+    ctx.fillText('上', cx, textY + noteSize + 4);
+    ctx.textAlign = 'start';
+  } else if (st.type === 'dn') {
+    ctx.fillStyle = '#1E5BA8';
+    ctx.font = 'bold ' + noteSize + 'px "Microsoft YaHei"';
+    ctx.textAlign = 'center';
+    ctx.fillText('下', cx, textY + noteSize + 4);
+    ctx.textAlign = 'start';
+  }
+}
+</script>
+</body>
+</html>

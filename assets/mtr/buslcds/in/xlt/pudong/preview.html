@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>浦东公交 - 线路图预览</title>
+<style>
+  @font-face {
+    font-family: "CompanyFont";
+    src: url("../../../font/company.ttf") format("truetype");
+    font-display: swap;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #222; display: flex; flex-direction: column; align-items: center; padding: 20px; font-family: "Microsoft YaHei", sans-serif; }
+  h2 { color: #fff; margin-bottom: 20px; }
+  .lcd { width: 2000px; height: 400px; position: relative; box-shadow: 0 4px 20px rgba(0,0,0,0.5); overflow: hidden; transform: scale(0.5); transform-origin: top center; }
+  .lcd-left { position: absolute; top: 0; left: 0; width: 340px; height: 400px; background: #1A4B9B; }
+  .lcd-logo-watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 280px; opacity: 0.25; pointer-events: none; }
+  .lcd-left .top-logo { position: absolute; top: 14px; left: 16px; width: 36px; height: auto; }
+  .lcd-left .company { position: absolute; top: 20px; left: 0; right: 0; text-align: center; color: #fff; font-size: 24px; font-weight: bold; font-family: "CompanyFont", "SimHei", "Microsoft YaHei", sans-serif; }
+  .lcd-left .divider { position: absolute; left: 20; right: 20; height: 2px; background: #3A6FD4; }
+  .lcd-left .station { position: absolute; left: 0; right: 0; text-align: center; color: #fff; font-size: 28px; font-weight: bold; }
+  .lcd-left .sub { position: absolute; left: 0; right: 0; text-align: center; color: #fff; font-size: 16px; }
+  .lcd-left .fare { position: absolute; left: 0; right: 0; text-align: center; color: #fff; font-size: 18px; }
+  .lcd-left .hotline { position: absolute; left: 0; right: 0; text-align: center; color: #fff; font-size: 18px; }
+  .lcd-right { position: absolute; top: 0; left: 340px; right: 0; height: 400px; background: #fff; }
+  .lcd-right .title { position: absolute; top: 10px; left: 0; right: 0; text-align: center; color: #1A4B9B; font-size: 48px; font-weight: bold; }
+  canvas { position: absolute; top: 90px; left: 0; }
+</style>
+</head>
+<body>
+<h2>浦东公交 · 线路图预览 (50%缩放)</h2>
+<div class="lcd">
+  <!-- 左面板 -->
+  <div class="lcd-left">
+    <img class="lcd-logo-watermark" src="../../../image/bw/logo/pudongwrite.png" alt="浦东公交">
+    <img class="top-logo" src="../../../image/bw/logo/pudongwrite.png" alt="浦东公交">
+    <div class="company">浦东公交</div>
+    <div class="divider" style="top:50px;"></div>
+    <div class="station" style="top:70px;">古丹路申江南路</div>
+    <div class="sub" style="top:105px;">首末班 06:00-22:00</div>
+    <div class="divider" style="top:130px;"></div>
+    <div class="station" style="top:180px;">新环西路新环北路</div>
+    <div class="sub" style="top:215px;">末班 06:00-22:00</div>
+    <div class="divider" style="top:240px;"></div>
+    <div class="fare" style="top:280px;">本线 空调单一票价 贰元</div>
+    <div class="hotline" style="top:310px;">服务热线: 50216666</div>
+  </div>
+  <!-- 右区域 -->
+  <div class="lcd-right">
+    <div class="title">1127路站级示意图</div>
+    <canvas id="routeCanvas" width="1660" height="320"></canvas>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('routeCanvas');
+const ctx = canvas.getContext('2d');
+
+const stations = [
+  { name: '古丹路申江南路', type: 'both' },
+  { name: '新浩路古丹路', type: 'up' },
+  { name: '古恩路申江南路', type: 'up' },
+  { name: '申江南路古恩路', type: 'dn' },
+  { name: '申江南路坦直社区', type: 'dn' },
+  { name: '申江南路下盐路', type: 'both' },
+  { name: '申江南路坦仁路', type: 'both' },
+  { name: '申江南路仁义', type: 'both' },
+  { name: '航三公路申江南路', type: 'both' },
+  { name: '航三公路康新公路', type: 'both' },
+  { name: '康新公路航三公路', type: 'both' },
+  { name: '康新公路新卫路', type: 'both' },
+  { name: '康新公路新环北路', type: 'both' },
+  { name: '新环北路康新公路', type: 'both' },
+  { name: '新环西路新环北路', type: 'both' },
+];
+
+const W = 1660, H = 310;
+const DOT_R = 10;
+const leftX = 20, rightX = W - 20;
+const gap = (W - 40) / (stations.length - 1);
+const LINE_Y = 30;
+
+ctx.fillStyle = '#fff';
+ctx.fillRect(0, 0, W, H);
+
+// 蓝色粗横线
+ctx.strokeStyle = '#1A4B9B';
+ctx.lineWidth = 4;
+ctx.beginPath();
+ctx.moveTo(leftX, LINE_Y);
+ctx.lineTo(rightX, LINE_Y);
+ctx.stroke();
+ctx.lineWidth = 1;
+
+// 方向箭头 (右区底部两端)
+const arrowY = 290; // canvas内: 90(top) + 290 = LCD 380
+const arrowSize = 10;
+// 左端: 红箭头朝右
+ctx.fillStyle = '#D0021B';
+ctx.strokeStyle = '#D0021B';
+ctx.lineWidth = 3;
+ctx.beginPath();
+ctx.moveTo(leftX, arrowY);
+ctx.lineTo(leftX + arrowSize * 2, arrowY);
+ctx.stroke();
+ctx.beginPath();
+ctx.moveTo(leftX + arrowSize * 2, arrowY);
+ctx.lineTo(leftX + arrowSize, arrowY - arrowSize * 0.7);
+ctx.lineTo(leftX + arrowSize, arrowY + arrowSize * 0.7);
+ctx.closePath();
+ctx.fill();
+// 右端: 绿箭头朝左
+ctx.fillStyle = '#009933';
+ctx.strokeStyle = '#009933';
+ctx.lineWidth = 3;
+ctx.beginPath();
+ctx.moveTo(rightX - arrowSize * 2, arrowY);
+ctx.lineTo(rightX, arrowY);
+ctx.stroke();
+ctx.beginPath();
+ctx.moveTo(rightX - arrowSize * 2, arrowY);
+ctx.lineTo(rightX - arrowSize, arrowY - arrowSize * 0.7);
+ctx.lineTo(rightX - arrowSize, arrowY + arrowSize * 0.7);
+ctx.closePath();
+ctx.fill();
+ctx.lineWidth = 1;
+
+// 站点
+const nameSize = 13;
+const noteSize = 10;
+
+for (let i = 0; i < stations.length; i++) {
+  const cx = leftX + gap * i;
+  const st = stations[i];
+  
+  let dotColor;
+  if (st.type === 'up') dotColor = '#D0021B';
+  else if (st.type === 'dn') dotColor = '#009933';
+  else dotColor = '#1A4B9B';
+  ctx.fillStyle = dotColor;
+  ctx.beginPath();
+  ctx.arc(cx, LINE_Y, DOT_R, 0, Math.PI * 2);
+  ctx.fill();
+  
+  ctx.fillStyle = st.type === 'up' ? '#D0021B' : st.type === 'dn' ? '#009933' : '#1A1A1A';
+  ctx.font = 'bold ' + nameSize + 'px "Microsoft YaHei"';
+  const chars = st.name.split('');
+  const firstCharW = ctx.measureText(chars[0]).width;
+  const textX = cx - firstCharW / 2;
+  let textY = LINE_Y + DOT_R + nameSize * 0.9;
+  for (const ch of chars) {
+    ctx.fillText(ch, textX, textY);
+    textY += nameSize * 1.2;
+  }
+  
+  if (st.type === 'up') {
+    ctx.fillStyle = '#D0021B';
+    ctx.font = 'bold ' + noteSize + 'px "Microsoft YaHei"';
+    ctx.textAlign = 'center';
+    ctx.fillText('上', cx, textY + noteSize + 4);
+    ctx.textAlign = 'start';
+  } else if (st.type === 'dn') {
+    ctx.fillStyle = '#009933';
+    ctx.font = 'bold ' + noteSize + 'px "Microsoft YaHei"';
+    ctx.textAlign = 'center';
+    ctx.fillText('下', cx, textY + noteSize + 4);
+    ctx.textAlign = 'start';
+  }
+}
+</script>
+</body>
+</html>
