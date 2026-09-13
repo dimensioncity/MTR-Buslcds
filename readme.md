@@ -32,16 +32,32 @@ v1.0 上线
 
 ### 属性可选配置
 
+*斜体字*表示该功能尚未实现
+
+**总开关**
+
+bw：博闻英文语法
+
+company：公司信息{ 名称, 电话, logo}
+
+debug：开发者模式
+
 **车外**
 
 |显示屏类型|可选（variant）|子可选（sub）|配置|位置数量|
 |:---:|:---:|:---:|:---:|:---:|
-|固牌|无|无|无|3（侧、尾、头）|
-|电显|博闻（bw）、凯伦（kl）|无| start（显示起始站）:false , english（英文终点站站名）:false , bashi（数字、英文巴士字体）:false , color（kl专用显示屏颜色）:"orange/red"|3（侧、尾、头）|
-|彩显|博闻（bw）、凯伦（kl）|2018 , 2020a , 2020b , 2022 , 2020sj , 2020pd（均为kl可选配置）|wheel（车头轮椅显示）:false, yzbt（右转必停显示）:false, tpnr（尾显图片内容）:false|3（侧、尾、头）|
+|固牌（out_gupai）|无|无|无|3（侧、尾、头）|
+|电显（out_dianxian）|博闻（bw）、凯伦（kl）|无| start（显示起始站）:false , english（英文终点站站名）:false , bashi（数字、英文巴士字体）:false , color（kl专用显示屏颜色）:"orange/red"|3（侧、尾、头）|
+|*彩显（out_caixian）*|博闻（bw）、凯伦（kl）|2018 , 2020a , 2020b , 2022 , 2020sj , 2020pd（均为kl可选配置）|wheel（车头轮椅显示）:false, yzbt（右转必停显示）:false, tpnr（尾显图片内容）:false|3（侧、尾、头）|
 
 **车内**
 
-等后续补充
+|显示屏类型|可选（variant）|子可选（sub）|配置|位置数量|
+|:---:|:---:|:---:|:---:|:---:|
+|线路图（in_xlt）|蓝色手作（blue）、绿色手作（green）、浦东公交（pudong）、巴士集团（bashi）|无|无|1（侧）|
+|电显（in_dianxian）|博闻（bw）、凯伦（kl）|澳马（apep）、强生（qs）、中安（za）、锐明（rm）、蓝斯（ls）、拓华（kh）、通达（td）、博闻（bw）、凯伦（kl）| right_temperature（kl专用，显示右边温度）:false , colorful（跟SWB6710系列差不多的样子）:false |1（头）|
+|*前部lcd（in_headlcd）*|<p>博闻（bw）、凯伦2018款（kl）、凯伦2020款（klnew）、凯伦综艺体款（klzy）|浦东（pd）、巴士（bs）、社会（sh）、自定义（zdylogo）、金山（js）、大众（dz）、松江（sj）、奉贤（fx）、闵行（mh）、青浦（qp）、71路（71）（bw可选）<br>浦东（pd）、巴士（bs）、社会（sh）、自定义（zdylogo）、金山（jinshanlv）、锦山（jinshanfen）、松江（sj）、奉贤客运（fk）、临港（lg）、闵行（mh）、青浦（qp）、20路（20）、65路（65）（klzy可选）</p>|highspeed（bw专用本线途经高速道路）:false, video（视频播放）:false|1（头）|
+|*风道屏lcd（in_sidelcd）*|<p>博闻（bw）、凯伦2018款（kl）、凯伦2020款（klnew）、凯伦综艺体款（klzy）|浦东（pd）、巴士（bs）、社会（sh）、自定义（zdylogo）、金山（js）、大众（dz）、奉贤（fx）、闵行（mh）、青浦（qp）、71路（71）（bw可选）<br>浦东（pd）、巴士（bs）、社会（sh）、自定义（zdylogo）、金山（jinshanlv）、锦山（jinshanfen）、松江（sj）、奉贤客运（fk）、临港（lg）、闵行（mh）、青浦（qp）、20路（20）、65路（65）（klzy可选）</p>|leftseat（左侧显示屏显示让座）:false|2（左、右）|
+|*头部lcd（类似临港S8B）（in_toplcd）*|<p>博闻（bw）、凯伦2018款（kl）、凯伦2020款（klnew）、凯伦综艺体款（klzy）|浦东（pd）、巴士（bs）、社会（sh）、自定义（zdylogo）、金山（js）、大众（dz）、松江（sj）、奉贤（fx）、闵行（mh）、青浦（qp）、71路（71）（bw可选）<br>浦东（pd）、巴士（bs）、社会（sh）、自定义（zdylogo）、金山（jinshanlv）、锦山（jinshanfen）、松江（sj）、奉贤客运（fk）、临港（lg）、闵行（mh）、青浦（qp）、20路（20）、65路（65）（klzy可选）</p>|video（视频播放）:false|2（吸顶lcd前后）|
 
 
