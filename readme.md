@@ -1,5 +1,7 @@
 Dimension_City 2026 All Rights Reserved
 
+**严禁将本开发资源包同搭载的车辆资源包捆绑，出现侵权概不负责！**
+
 ### 什么是 MTR-Buslcds
 
 MTR-Buslcds 是一个基于AI开发的，适用于MTR模组上的公交车LCD。
